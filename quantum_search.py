@@ -30,12 +30,13 @@
 
 # REQUIREMENT LIST
 #- Python 3.x with x >= 2
+#- Scipy
 
 #=========================================================================
 
 # Author: André Schrottenloher & Marc Stevens
-# Date: June 2022
-# Version: 1
+# Date: October 2022
+# Version: 2
 
 #=========================================================================
 """
@@ -43,15 +44,16 @@ Defines some useful functions to compute the complexity and success probability
 of the quantum algorithms studied in our paper, and to optimize them.
 The "minimize" function from scipy.optimize is used for numerical optimizations.
 
-In these scripts, algorithms / quantum circuits are simply represented as dictionaries containing
-various information such as:
-"space": space complexity (the number of qubits this circuit acts on)
-"ancilla": number of ancilla qubits
-"gates": number of gates
-"prob": probability of success
-"epsilon": relative interval on the probability of success
-        i.e., we know that it belongs to an interval ((1-epsilon)prob ; (1+epsilon)prob)
-"choice": size of the "choice" space, for the first substep of each step in our backtracking framework.
+The subsequent steps Ai / Di of our generic framework are represented as dictionaries
+with the following keys:
+
+"choice": size of the choice space
+"Aspace": size of the work register of A
+"Agates": gate count of A
+"probl": lower bound on the filtering probability of A (alpha_i'^2 in the paper)
+"probu": upper bound on the filtering probability of A
+"Dspace": size of the work register of D (if additional space required)
+"Dgates": gate count of D
 
 """
 
@@ -90,171 +92,139 @@ def print_algo(d):
     the log in base 2 of the values.
     """
     for i in d:
-        print(i, ":", log(d[i], 2))
+        print(i, ":", log(d[i], 2) if d[i] > 0 else "nan")
+
+
+def check_list_steps(l):
+    _keys = [
+        "choice", "Aspace", "Agates", "probl", "probu", "Dspace", "Dgates"
+    ]
+    assert type(l) == list
+    for d in l:
+        assert type(d) == dict
+        for k in _keys:
+            assert k in d
+        for k in d:
+            assert k in _keys
+        assert d["probl"] <= d["probu"]
 
 
 # Steps for the quantum DS-MITM attack on AES-256 of Bonnetain et al.
 aes256_dsmitm_steps = [
     # first step: A1 (D1 is empty)
     {
-        "A": {
-            "choice": 2**80,
-            "space": 0,
-            "gates": 2**88,
-            "prob": 1,
-            "epsilon": 0
-        },
-        "D": {
-            "space": 0,
-            "gates": 0
-        }
+        "choice": 2**80,
+        "Aspace": 0,
+        "Agates": 2**88,
+        "probl": 1,
+        "probu": 1,
+        "Dspace": 0,
+        "Dgates": 0
     },
     {
-        "A": {
-            "choice": 2**64,
-            "space": 0,
-            "gates": 32,
-            "prob": 2**(-8),
-            "epsilon": 0
-        },
-        "D": {
-            "space": 0,
-            "gates": 0
-        }
+        "choice": 2**64,
+        "Aspace": 0,
+        "Agates": 32,
+        "probu": 2**(-8),
+        "probl": 2**(-8),
+        "Dspace": 0,
+        "Dgates": 0
     },
     {
-        "A": {
-            "choice": 2**32,
-            "space": 0,
-            "gates": 16,
-            "prob": 2**(-8),
-            "epsilon": 2**(-8)
-        },
-        "D": {
-            "space": 0,
-            "gates": 0
-        }
+        "choice": 2**32,
+        "Aspace": 0,
+        "Agates": 16,
+        "probu": 2**(-8) * (1 + 2**(-8)),
+        "probl": 2**(-8) * (1 - 2**(-8)),
+        "Dspace": 0,
+        "Dgates": 0
     },
     {
-        "A": {
-            "choice": 2**32,
-            "space": 0,
-            "gates": 16,
-            "prob": 2**(-8),
-            "epsilon": 2**(-8)
-        },
-        "D": {
-            "space": 0,
-            "gates": 0
-        }
+        "choice": 2**32,
+        "Aspace": 0,
+        "Agates": 16,
+        "probu": 2**(-8) * (1 + 2**(-8)),
+        "probl": 2**(-8) * (1 - 2**(-8)),
+        "Dspace": 0,
+        "Dgates": 0
     },
     {
-        "A": {
-            "choice": 2**32,
-            "space": 0,
-            "gates": 16,
-            "prob": 2**(-8),
-            "epsilon": 2**(-8)
-        },
-        "D": {
-            "space": 0,
-            "gates": 0
-        }
+        "choice": 2**32,
+        "Aspace": 0,
+        "Agates": 16,
+        "probu": 2**(-8) * (1 + 2**(-8)),
+        "probl": 2**(-8) * (1 - 2**(-8)),
+        "Dspace": 0,
+        "Dgates": 0
     },
     {
-        "A": {
-            "choice": 2**32,
-            "space": 0,
-            "gates": 16,
-            "prob": 2**(-8),
-            "epsilon": 2**(-8)
-        },
-        "D": {
-            "space": 0,
-            "gates": 2**10,
-        }
+        "choice": 2**32,
+        "Aspace": 0,
+        "Agates": 16,
+        "probu": 2**(-8) * (1 + 2**(-8)),
+        "probl": 2**(-8) * (1 - 2**(-8)),
+        "Dspace": 0,
+        "Dgates": 2**10,
     },
     {
-        "A": {
-            "choice": 2**9,
-            "space": 0,
-            "gates": 2**5 * 40,
-            "prob": 1,
-            "epsilon": 0
-        },
-        "D": {
-            "space": 0,
-            "gates": 0
-        }
-    },
+        "choice": 2**9,
+        "Aspace": 0,
+        "Agates": 2**5 * 40,
+        "probu": 1,
+        "probl": 1,
+        "Dspace": 0,
+        "Dgates": 0
+    }
 ]
 
 # Steps for the quantum Square attack on 6-round AES of Bonnetain et al.
 aes_square_steps = [{
-    "A": {
-        "choice": 2**16,
-        "space": 2**32,
-        "gates": 2**36,
-        "prob": 1,
-        "epsilon": 0
-    },
-    "D": {
-        "space": 0,
-        "gates": 0
-    }
+    "choice": 2**16,
+    "Aspace": 2**32,
+    "Agates": 2**36,
+    "probu": 1,
+    "probl": 1,
+    "Dspace": 0,
+    "Dgates": 0
 }, {
-    "A": {
-        "choice": 2**8,
-        "space": 2**24,
-        "gates": 2**27,
-        "prob": 1,
-        "epsilon": 0
-    },
-    "D": {
-        "space": 0,
-        "gates": 0
-    }
+    "choice": 2**8,
+    "Aspace": 2**24,
+    "Agates": 2**27,
+    "probu": 1,
+    "probl": 1,
+    "Dspace": 0,
+    "Dgates": 0
 }, {
-    "A": {
-        "choice": 2**8,
-        "space": 2**16,
-        "gates": 2**19,
-        "prob": 1,
-        "epsilon": 0
-    },
-    "D": {
-        "space": 0,
-        "gates": 0
-    }
+    "choice": 2**8,
+    "Aspace": 2**16,
+    "Agates": 2**19,
+    "probu": 1,
+    "probl": 1,
+    "Dspace": 0,
+    "Dgates": 0
 }, {
-    "A": {
-        "choice": 2**8,
-        "space": 2**8,
-        "gates": 2**11,
-        "prob": 1,
-        "epsilon": 0
-    },
-    "D": {
-        "space": 0,
-        "gates": 0
-    }
+    "choice": 2**8,
+    "Aspace": 2**8,
+    "Agates": 2**11,
+    "probu": 1,
+    "probl": 1,
+    "Dspace": 0,
+    "Dgates": 0
 }]
 
 
 def inversion_around_zero_gate_count(w):
     """
-    Gate count of the "inversion around zero" operator on w qubits.
+    Gate count of the "inversion around zero" operator on w qubits, plus 3 gates.
     """
-    return 44 * w - 39
+    return 44 * w - 36
 
 
 def algorithm_parameters(steps, relative_cost_gates=0.1):
     """
-    Given a backtracking algorithm given as a list of steps: {"A" : A , "D" : D}
-    where "A" is a dictionary representing an algorithm with parameters:
-    "choice", "space", "gates", "prob" and "epsilon"
-    and "D" is a dictionary representing an algorithm with parameters:
-    "space", "gates"
+    Given a backtracking algorithm given as a list of steps, where each
+    step is a dictionary with the keys:
+    "choice", "Aspace", "Agates", "probl", "probu", "Dspace", "Dgates"
     
     Returns the average complexity of an algorithm ensuring a success probability 1/2
     with our framework *using the formulas*.
@@ -264,7 +234,7 @@ def algorithm_parameters(steps, relative_cost_gates=0.1):
     examples because their "gates" actually count S-Boxes, which are more
     costly than gates. If None, then we will not count the other gates at all.
     """
-
+    check_list_steps(steps)
     if relative_cost_gates is not None:
         inversion_around_zero_actual_count = (
             lambda x: relative_cost_gates * inversion_around_zero_gate_count(x)
@@ -274,58 +244,33 @@ def algorithm_parameters(steps, relative_cost_gates=0.1):
 
     # read the steps and compute all the parameters, with the complexities and final success prob.
     ell = len(steps)
-    size = [s["A"]["choice"] for s in steps]  # size of "choice" sets C_i
-    gammap = [sqrt(s["A"]["prob"]) for s in steps]
-    epsilon = [s["A"]["epsilon"] for s in steps]
-    gamma = [1 / gammap[i] / sqrt(size[i])
-             for i in range(ell)]  # values of gammai for each step
+    size = [s["choice"] for s in steps]  # size of "choice" sets C_i
 
-    # choose values of kprime
-    kp = [
-        0 if gammap[j] == 1 else floor(
-            pi / (4 * asin(gammap[j] * sqrt(1 + epsilon[j]))))
-        for j in range(ell)
-    ]
+    # parameters l_i' for the bound on alpha_i'
+    lp = [sqrt(s["probl"]) for s in steps]
+    # parameters u_i'
+    up = [sqrt(s["probu"]) for s in steps]
+    l = [1 / up[i] / sqrt(size[i]) for i in range(ell)]
+    u = [1 / lp[i] / sqrt(size[i]) for i in range(ell)]
 
-    # choose values of k (depending on whether gammap = 1)
-    k = [
-        floor(0.5 * sqrt(size[j]) - 0.5) if gammap[j] == 1 else
-        floor(0.5 * gammap[j] * sqrt((1 - epsilon[j]) * size[j]) - 1)
-        for j in range(ell - 1)
-    ]
-    # choose the constant c
-    optimized_c = False
-    if not optimized_c:
-        constant_c = 4 / (pi**2)
-    else:
-        constant_c = 1 / (1 + 1 / 9 * (pi**2 / 4 - 1))  # with
+    # choose with the formulas of Lemma 11 (Sec 5.4)
+    kp = [floor(pi / (4 * asin(up[i])) - 0.5) for i in range(ell)]
 
-    k.append(floor(0.5 * sqrt(constant_c / ell) * sqrt(size[-1]) -
-                   0.5))  # k_ell
-    if optimized_c:
-        for i in range(ell):
-            if k[i] <= 0:
-                raise ValueError(
-                    "Incorrect parameters (number of iterations = 0)")
-                # the better value of c given above works only if there is at least
-                # one iteration at each step
+    # choose values of k
+    k = [floor(0.5 / u[i] - 0.5) for i in range(ell - 1)]
+    # choose kell
+    k.append(floor(0.5 * sqrt(4 / (pi**2) / ell) / u[ell - 1] - 0.5))
 
     # compute success probability by the formula in the paper
-    success_prob = exp(-1)
+    success_prob = exp(-1) * (1 - 4 / (pi**2))
     for j in range(ell):
-        if gammap[j] != 1:
-            # there is a Grover search at this step
-            error_term = (sin(
-                (2 * kp[j] + 1) * asin(gammap[j] * sqrt(1 - epsilon[j]))))**2
-            success_prob *= error_term
-            print("Early-abort search error at step ", j + 1, error_term)
-        if epsilon[j] != 0:
-            error_term *= 1 / (1 + epsilon[j])
-            print("Error at step ", j + 1, error_term)
-            success_prob *= error_term
-        print("Search error at step ", j + 1,
-              (2 * k[j] + 1)**2 / gammap[j]**2 / size[j])
-        success_prob *= (2 * k[j] + 1)**2 / gammap[j]**2 / size[j]
+        # there is a Grover search at this step
+        error_term = (sin((2 * kp[j] + 1) * asin(lp[j])))**2
+        success_prob *= error_term
+        print("Early-abort search error at step ", j + 1, error_term)
+        search_error_term = (2 * k[j] + 1)**2 * l[j]**2
+        print("Search error at step ", j + 1, search_error_term)
+        success_prob *= search_error_term
     print("Total success prob. (with log):")
     print(success_prob)
     print(log(success_prob, 2))
@@ -336,28 +281,27 @@ def algorithm_parameters(steps, relative_cost_gates=0.1):
 
     # then compute the complexities of B_ell, until B_1
     b_gates = [None for i in range(ell)]
-    b_space = [None for i in range(ell)
-               ]  # space complexity of bi (number of qubits spanned)
+    b_space = [None for i in range(ell)]
+    # space complexity of bi (number of qubits spanned)
 
     # bell: (2kell+1) (G(Aell) + nell) + kell * I(nell)
     b_gates[-1] = (
-        (2 * k[-1] + 1) * (steps[-1]["A"]["gates"] +
-                           steps[-1]["A"]["space"] * relative_cost_gates) +
-        k[-1] * inversion_around_zero_actual_count(steps[-1]["A"]["space"]))
-    b_space[-1] = steps[-1]["A"]["space"]
+        (2 * k[-1] + 1) *
+        (steps[-1]["Agates"] + steps[-1]["Aspace"] * relative_cost_gates) +
+        k[-1] * inversion_around_zero_actual_count(steps[-1]["Aspace"]))
+    b_space[-1] = steps[-1]["Aspace"]
 
     for i in range(ell - 2, -1, -1):
         # space complexity: all the qubits on which bi act (incl. new flag)
         b_space[i] = b_space[
-            i + 1] + steps[i]["A"]["space"] + steps[i]["D"]["space"] + log(
-                steps[i]["A"]["choice"], 2) + 1
+            i + 1] + steps[i]["Aspace"] + steps[i]["Dspace"] + log(
+                steps[i]["choice"], 2) + 1
         b_gates[i] = (
             (2 * k[i] + 1) *
             (b_gates[i + 1] + (2 * kp[i] + 1) *
-             (steps[i]["A"]["gates"] +
-              steps[i]["A"]["space"] * relative_cost_gates) +
-             kp[i] * inversion_around_zero_actual_count(steps[i]["A"]["space"])
-             + steps[i]["D"]["gates"]) +
+             (steps[i]["Agates"] + steps[i]["Aspace"] * relative_cost_gates) +
+             kp[i] * inversion_around_zero_actual_count(steps[i]["Aspace"]) +
+             steps[i]["Dgates"]) +
             k[i] * inversion_around_zero_actual_count(b_space[i]))
 
     results_gates = [log(t, 2) for t in b_gates]
@@ -375,16 +319,45 @@ def algorithm_parameters(steps, relative_cost_gates=0.1):
     print_algo(overcook)
 
 
+def algorithm_sqrt(steps):
+    """
+    Computes the complexity if quantum search was an exact procedure, using the 
+    square-root of the expected numbers of iterates. We take the upper bounds
+    of success probabilities.
+    """
+    # read the steps and compute all the parameters, with the complexities
+    # and final success prob.
+    ell = len(steps)
+    size = [s["choice"] for s in steps]  # size of "choice" sets C_i
+    alphap = [sqrt(s["probu"]) for s in steps]
+    alpha = [1 / alphap[i] / sqrt(size[i]) for i in range(ell)]
+
+    # choose values of kprime
+    kp = [1 / alphap[j] for j in range(ell)]
+    k = [1 / alpha[j] for j in range(ell - 1)]
+    k.append(sqrt(size[-1]))
+    b_gates = [None for i in range(ell)]
+
+    b_gates[-1] = (k[-1] * (steps[-1]["Agates"]))
+    for i in range(ell - 2, -1, -1):
+        b_gates[i] = k[i] * (b_gates[i + 1] + steps[i]["Dgates"] + kp[i] *
+                             (steps[i]["Agates"]))
+
+    results_gates = [log(t, 2) for t in b_gates]
+    print(k)
+    print(kp)
+    print(results_gates)
+
+    final_algo = {"space": 0, "ancillas": 0, "gates": b_gates[0], "prob": 1}
+    print_algo(final_algo)
+
+
 def algorithm_parameters_optimized(steps,
                                    relative_cost_gates=0.1,
                                    fix_prob=0.95,
-                                   prob_factor=4):
+                                   prob_exponent=4):
     """
-    Given a backtracking algorithm given as a list of steps: {"A" : A , "D" : D}
-    where "A" is a dictionary representing an algorithm with parameters:
-    "choice", "space", "gates", "prob" and "epsilon"
-    and "D" is a dictionary representing an algorithm with parameters:
-    "space", "gates"
+    Given a backtracking algorithm given as a list of steps (as above),
     
     Returns the average complexity of an algorithm to obtain a success. This
     complexity is usually better than the result of 'algorithm_parameters', because
@@ -399,9 +372,9 @@ def algorithm_parameters_optimized(steps,
     Otherwise, we will search for a minimization of the ratio time / prob. of success.
     This will usually give much less, e.g. 80% success.
     In order to increase it (albeit a bit artificially), we optimize time / (prob**r)
-    instead, where r is the parameter prob_factor (default : 4).
+    instead, where r is the parameter prob_exponent (default : 4).
     """
-
+    check_list_steps(steps)
     if relative_cost_gates is not None:
         inversion_around_zero_actual_count = (
             lambda x: relative_cost_gates * inversion_around_zero_gate_count(x)
@@ -410,34 +383,33 @@ def algorithm_parameters_optimized(steps,
         inversion_around_zero_actual_count = lambda x: 0
 
     ell = len(steps)
-    size = [s["A"]["choice"] for s in steps]  # size of "choice" sets C_i
-    gammap = [sqrt(s["A"]["prob"]) for s in steps]
-    epsilon = [s["A"]["epsilon"] for s in steps]
-    gamma = [1 / gammap[i] / sqrt(size[i])
-             for i in range(ell)]  # values of gammai for each step
+    size = [s["choice"] for s in steps]  # size of "choice" sets C_i
+    # parameters l_i' for the bound on alpha_i'
+    lp = [sqrt(s["probl"]) for s in steps]
+    # parameters u_i'
+    up = [sqrt(s["probu"]) for s in steps]
+    l = [1 / up[i] / sqrt(size[i]) for i in range(ell)]
+    u = [1 / lp[i] / sqrt(size[i]) for i in range(ell)]
 
-    # choose values of kprime
-    kp = [
-        0 if gammap[j] == 1 else
-        floor(pi / (4 * asin(gammap[j] * sqrt(1 + epsilon[j]))) - 0.5)
-        for j in range(ell)
-    ]
-    # amplitude of success of the early-abort Grover searches
-    early_ab_ampl = [
-        1 if gammap[j] == 1 else sin(
-            (2 * kp[j] + 1) * asin(gammap[j] * sqrt(1 - epsilon[j])))
-        for j in range(ell)
-    ]
+    # choose with the formulas of Lemma 11 (Sec 5.4)
+    kp = [floor(pi / (4 * asin(up[i])) - 0.5) for i in range(ell)]
+
+    # choose values of k
+    k = [floor(0.5 / u[i] - 0.5) for i in range(ell - 1)]
+    # choose kell
+    k.append(floor(0.5 * sqrt(4 / (pi**2) / ell) / u[ell - 1] - 0.5))
+
+    # amplitude of success of the early-abort layers
+    early_ab_ampl = [sin((2 * kp[j] + 1) * asin(lp[j])) for j in range(ell)]
 
     # now the values of k are the unknowns
     def prob(x):
         # probability of success, depending on a certain choice of k_i
-        p = sin((2 * x[-1] + 1) * asin(gamma[-1] / (1 + epsilon[-1])))
+        p = sin((2 * x[-1] + 1) * asin(l[-1]))
         for i in range(ell - 1):
             ind = -2 - i
             # includes case epsilon = 0
-            p = sin((2 * x[ind] + 1) * asin(
-                p * gamma[ind] / sqrt(1 + epsilon[ind]) * early_ab_ampl[ind]))
+            p = sin((2 * x[ind] + 1) * asin(p * l[ind] * early_ab_ampl[ind]))
         return p**2
 
     def complexity(x):
@@ -449,33 +421,30 @@ def algorithm_parameters_optimized(steps,
 
         # bell: (2kell+1) (G(Aell) + nell) + kell * I(nell)
         b_gates[-1] = (
-            (2 * k[-1] + 1) * (steps[-1]["A"]["gates"] +
-                               steps[-1]["A"]["space"] * relative_cost_gates) +
-            k[-1] *
-            inversion_around_zero_actual_count(steps[-1]["A"]["space"]))
-        b_space[-1] = steps[-1]["A"]["space"]
+            (2 * k[-1] + 1) *
+            (steps[-1]["Agates"] + steps[-1]["Aspace"] * relative_cost_gates) +
+            k[-1] * inversion_around_zero_actual_count(steps[-1]["Aspace"]))
+        b_space[-1] = steps[-1]["Aspace"]
 
         for i in range(ell - 2, -1, -1):
             # space complexity: all the qubits on which bi act (incl. new flag)
             b_space[i] = b_space[
-                i + 1] + steps[i]["A"]["space"] + steps[i]["D"]["space"] + log(
-                    steps[i]["A"]["choice"], 2) + 1
+                i + 1] + steps[i]["Aspace"] + steps[i]["Dspace"] + log(
+                    steps[i]["choice"], 2) + 1
             b_gates[i] = (
                 (2 * k[i] + 1) *
                 (b_gates[i + 1] + (2 * kp[i] + 1) *
-                 (steps[i]["A"]["gates"] +
-                  steps[i]["A"]["space"] * relative_cost_gates) + kp[i] *
-                 inversion_around_zero_actual_count(steps[i]["A"]["space"]) +
-                 steps[i]["D"]["gates"]) +
+                 (steps[i]["Agates"] + steps[i]["Aspace"] * relative_cost_gates
+                  ) + kp[i] * inversion_around_zero_actual_count(
+                      steps[i]["Aspace"]) + steps[i]["Dgates"]) +
                 k[i] * inversion_around_zero_actual_count(b_space[i]))
         return b_gates[0]
 
     # bounds on the possible values of k
-    k_bounds = [(0, pi / 4 / asin(gamma[j] / sqrt(1 - epsilon[j])) - 0.5)
-                for j in range(ell)]
+    k_bounds = [(0, pi / 4 / asin(u[j]) - 0.5) for j in range(ell)]
     start = [t[1] for t in k_bounds]
     if fix_prob is None:
-        res = minimize(lambda x: complexity(x) / prob(x)**prob_factor,
+        res = minimize(lambda x: complexity(x) / prob(x)**prob_exponent,
                        start,
                        bounds=k_bounds,
                        options={
@@ -601,40 +570,39 @@ def multi_test_find(n):
 
 if __name__ == "__main__":
 
-    pass
-    # EXAMPLES
-
     #==================================
     # computing the complexity of the AES-256 DS-MITM attack, for success probability
     # 1/2, using our formula (note that the compelxity is counted in S-Boxes,
     # but even setting relative_cost_gates = 1 does not change significantly the result anyway)
 
-#    algorithm_parameters(aes256_dsmitm_steps, relative_cost_gates=0.1)
-#    algorithm_parameters(aes_square_steps, relative_cost_gates=0.1)
+    algorithm_parameters(aes256_dsmitm_steps, relative_cost_gates=0.1)
+    algorithm_parameters(aes_square_steps, relative_cost_gates=0.1)
 
-#=================================
-# computing the complexities (average) of the AES-256 DS-MITM and the AES
-# square attacks, using a numerical optimization of the parameters.
+    print("\n================================\n")
 
-# with fixed probability of success >= 95%: does not work for DS-MITM
-#    algorithm_parameters_optimized(aes256_dsmitm_steps,
-#                                   relative_cost_gates=0.1, fix_prob=0.95)
+    algorithm_sqrt(aes256_dsmitm_steps)
+    algorithm_sqrt(aes_square_steps)
 
-# without a fixed prob, only by optimizing a single function, but giving
-# more weight to the prob of success (prob_factor = 4)
-# (note that giving too much weight will result in a prob. of success close
-# to 1 at all levels, and paying the pi/2 factor of each level).
-#    algorithm_parameters_optimized(aes256_dsmitm_steps,
-#                                   relative_cost_gates=0.1,
-#                                   fix_prob=None,
-#                                   prob_factor=4)
+    print("\n================================\n")
 
-#    # here the fixed probability to 0.95 does work.
-#    algorithm_parameters_optimized(aes_square_steps,
-#                                   relative_cost_gates=0.1,
-#                                   fix_prob=0.95)
+    #=================================
+    # computing the complexities (average) of the AES-256 DS-MITM and the AES
+    # square attacks, using a numerical optimization of the parameters.
 
-#=================================
-# Looking for the optimal configuration for a "search with independent tests"
-# on a search space of size 2^256
-#print(multi_test_find(256))
+    # We optimize (complexity / proba of success*r) for some power r (prob_exponent).
+    # (note that giving too much weight will result in a prob. of success close
+    # to 1 at all levels, and paying the pi/2 factor of each level).
+    algorithm_parameters_optimized(aes256_dsmitm_steps,
+                                   relative_cost_gates=0.1,
+                                   fix_prob=None,
+                                   prob_exponent=3.5)
+
+    algorithm_parameters_optimized(aes_square_steps,
+                                   relative_cost_gates=0.1,
+                                   fix_prob=None,
+                                   prob_exponent=3)
+
+    #=================================
+    # Looking for the optimal configuration for a "search with independent tests"
+    # on a search space of size 2^256
+    #print(multi_test_find(256))
