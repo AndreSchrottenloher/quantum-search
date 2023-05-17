@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 #=========================================================================
-#Copyright (c) 2022
+#Copyright (c) 2023
 
 #Permission is hereby granted, free of charge, to any person obtaining a copy
 #of this software and associated documentation files (the "Software"), to deal
@@ -25,6 +25,9 @@
 #=========================================================================
 
 #This project has been supported by ERC-ADG-ALGSTRONGCRYPTO (project 740972).
+#It has been partially supported by the French National Research Agency through 
+#the DeCrypt project under Contract ANR-18-CE39-0007, and through the France 
+#2030 program under grant agreement No. ANR-22-PETQ-0008 PQ-TLS.
 
 #=========================================================================
 
@@ -35,8 +38,8 @@
 #=========================================================================
 
 # Author: André Schrottenloher & Marc Stevens
-# Date: October 2022
-# Version: 2
+# Date: May 2023
+# Version: 3
 
 #=========================================================================
 """
@@ -259,10 +262,10 @@ def algorithm_parameters(steps, relative_cost_gates=0.1):
     # choose values of k
     k = [floor(0.5 / u[i] - 0.5) for i in range(ell - 1)]
     # choose kell
-    k.append(floor(0.5 * sqrt(4 / (pi**2) / ell) / u[ell - 1] - 0.5))
+    k.append(floor(0.5 / sqrt(2 * ell) / u[ell - 1] - 0.5))
 
     # compute success probability by the formula in the paper
-    success_prob = exp(-1) * (1 - 4 / (pi**2))
+    success_prob = 0.5
     for j in range(ell):
         # there is a Grover search at this step
         error_term = (sin((2 * kp[j] + 1) * asin(lp[j])))**2
@@ -395,9 +398,9 @@ def algorithm_parameters_optimized(steps,
     kp = [floor(pi / (4 * asin(up[i])) - 0.5) for i in range(ell)]
 
     # choose values of k
-    k = [floor(0.5 / u[i] - 0.5) for i in range(ell - 1)]
+    #k = [floor(0.5 / u[i] - 0.5) for i in range(ell - 1)]
     # choose kell
-    k.append(floor(0.5 * sqrt(4 / (pi**2) / ell) / u[ell - 1] - 0.5))
+    #k.append(floor(0.5 * sqrt(4 / (pi**2) / ell) / u[ell - 1] - 0.5))
 
     # amplitude of success of the early-abort layers
     early_ab_ampl = [sin((2 * kp[j] + 1) * asin(lp[j])) for j in range(ell)]
@@ -576,11 +579,13 @@ if __name__ == "__main__":
     # but even setting relative_cost_gates = 1 does not change significantly the result anyway)
 
     algorithm_parameters(aes256_dsmitm_steps, relative_cost_gates=0.1)
+    print("\n----------------------------------\n")
     algorithm_parameters(aes_square_steps, relative_cost_gates=0.1)
 
     print("\n================================\n")
 
     algorithm_sqrt(aes256_dsmitm_steps)
+    print("\n----------------------------------\n")
     algorithm_sqrt(aes_square_steps)
 
     print("\n================================\n")
@@ -596,7 +601,7 @@ if __name__ == "__main__":
                                    relative_cost_gates=0.1,
                                    fix_prob=None,
                                    prob_exponent=3.5)
-
+    print("\n----------------------------------\n")
     algorithm_parameters_optimized(aes_square_steps,
                                    relative_cost_gates=0.1,
                                    fix_prob=None,
