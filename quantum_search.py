@@ -397,11 +397,6 @@ def algorithm_parameters_optimized(steps,
     # choose with the formulas of Lemma 11 (Sec 5.4)
     kp = [floor(pi / (4 * asin(up[i])) - 0.5) for i in range(ell)]
 
-    # choose values of k
-    #k = [floor(0.5 / u[i] - 0.5) for i in range(ell - 1)]
-    # choose kell
-    #k.append(floor(0.5 * sqrt(4 / (pi**2) / ell) / u[ell - 1] - 0.5))
-
     # amplitude of success of the early-abort layers
     early_ab_ampl = [sin((2 * kp[j] + 1) * asin(lp[j])) for j in range(ell)]
 
