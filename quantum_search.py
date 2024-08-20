@@ -38,7 +38,7 @@
 #=========================================================================
 
 # Author: André Schrottenloher & Marc Stevens
-# Date: May 2023
+# Date: Jan 2024
 # Version: 3
 
 #=========================================================================
@@ -55,7 +55,7 @@ with the following keys:
 "Agates": gate count of A
 "probl": lower bound on the filtering probability of A (alpha_i'^2 in the paper)
 "probu": upper bound on the filtering probability of A
-"Dspace": size of the work register of D (if additional space required)
+"Dspace": size of the work register of D (if additional space required with respect to A)
 "Dgates": gate count of D
 
 """
@@ -64,10 +64,28 @@ from math import *
 from scipy.optimize import minimize
 
 
+def gzero(n):
+    """
+    Number of gates to implement both the O_{0,n} operator and the O phase flip.
+    The definition of this function depends on what you actually want to count
+    as "gates". Here we are only counting Toffoli gates.
+    """
+    return 6 * n
+
+
+def hadamard(n):
+    """
+    Number of gates to implement the Hadamard transform on n bits.
+    The definition of this function depends on what you actually want to count
+    as "gates". Here we are only counting Toffoli gates.
+    """
+    return 0
+
+
 def amplify_overcook(d, with_additional_gates=True):
     """
     Given algorithm A represented by dictionary d:
-    {"space" : w, "ancilla" : a, "gates" : g, "prob" : pmin}
+    {"space" : w, "gates" : g, "prob" : pmin}
     where the success probability is only given as a lower bound, returns the
     dictionary corresponding to the "overcooked QAA" on A that reaches a success
     probability at least 1/2.
@@ -76,14 +94,10 @@ def amplify_overcook(d, with_additional_gates=True):
     m = ceil(1.21 / sqrt(d["prob"]))
     return {
         "space":
-        d["space"],  # no more space
-        "ancillas":
-        max(d["ancillas"], d["space"] - 1),
-        # computing the inversion around zero requires some additional space
+        d["space"] + 1,
         "gates":
         ((2 * m + 2) * d["gates"] +
-         ((m - 1) * (44 * d["space"] - 33) if with_additional_gates else 0)),
-        # counting, in Clifford+T, the inversion around zero + phase flip
+         ((m - 1) * (gzero(d["space"]) if with_additional_gates else 0))),
         "prob":
         1 / 2
     }
@@ -215,12 +229,40 @@ aes_square_steps = [{
     "Dgates": 0
 }]
 
-
-def inversion_around_zero_gate_count(w):
-    """
-    Gate count of the "inversion around zero" operator on w qubits, plus 3 gates.
-    """
-    return 44 * w - 36
+# Steps fror the ID attack of David et al.
+aes_id_steps = [{
+    "choice": 2**32,
+    "Aspace": 0,
+    "Agates": 8 * 2**78.5,
+    "probu": 1,
+    "probl": 1,
+    "Dspace": 0,
+    "Dgates": 0
+}, {
+    "choice": 2**32,
+    "Aspace": 0,
+    "Agates": 8 * 2**63.5,
+    "probu": 1,
+    "probl": 1,
+    "Dspace": 0,
+    "Dgates": 0
+}, {
+    "choice": 2**32,
+    "Aspace": 0,
+    "Agates": 8 * 2**47.5,
+    "probu": 1,
+    "probl": 1,
+    "Dspace": 0,
+    "Dgates": 0
+}, {
+    "choice": 2**32,
+    "Aspace": 0,
+    "Agates": 8 * 2**23.5,
+    "probu": 1,
+    "probl": 1,
+    "Dspace": 0,
+    "Dgates": 0
+}]
 
 
 def algorithm_parameters(steps, relative_cost_gates=0.1):
@@ -239,11 +281,11 @@ def algorithm_parameters(steps, relative_cost_gates=0.1):
     """
     check_list_steps(steps)
     if relative_cost_gates is not None:
-        inversion_around_zero_actual_count = (
-            lambda x: relative_cost_gates * inversion_around_zero_gate_count(x)
-        )
+        gzero_actual = (lambda x: relative_cost_gates * gzero(x))
+        hadamard_actual = (lambda x: relative_cost_gates * hadamard(x))
     else:
-        inversion_around_zero_actual_count = lambda x: 0
+        gzero_actual = lambda x: 0
+        hadamard_actual = lambda x: 0
 
     # read the steps and compute all the parameters, with the complexities and final success prob.
     ell = len(steps)
@@ -282,39 +324,35 @@ def algorithm_parameters(steps, relative_cost_gates=0.1):
     final_iterates = 2 * ceil(1.21 / sqrt(success_prob)) + 2
     print(final_iterates)
 
-    # then compute the complexities of B_ell, until B_1
-    b_gates = [None for i in range(ell)]
-    b_space = [None for i in range(ell)]
-    # space complexity of bi (number of qubits spanned)
+    b_gates = [None for i in range(ell + 1)]
+    # gate complexity of B_i
+    b_space = [None for i in range(ell + 1)]
+    # space complexity of B_i (number of qubits spanned)
 
-    # bell: (2kell+1) (G(Aell) + nell) + kell * I(nell)
-    b_gates[-1] = (
-        (2 * k[-1] + 1) *
-        (steps[-1]["Agates"] + steps[-1]["Aspace"] * relative_cost_gates) +
-        k[-1] * inversion_around_zero_actual_count(steps[-1]["Aspace"]))
-    b_space[-1] = steps[-1]["Aspace"]
+    # recall that B_{ell+1} does nothing by definition
+    b_gates[-1] = 0
+    b_space[-1] = 0
+    current_choice_space = 0
 
-    for i in range(ell - 2, -1, -1):
+    for i in range(ell - 1, -1, -1):
+        current_choice_space += log(steps[i]["choice"], 2)
         # space complexity: all the qubits on which bi act (incl. new flag)
-        b_space[i] = b_space[
-            i + 1] + steps[i]["Aspace"] + steps[i]["Dspace"] + log(
-                steps[i]["choice"], 2) + 1
+        b_space[i] = (b_space[i + 1] + steps[i]["Aspace"] +
+                      steps[i]["Dspace"] + log(steps[i]["choice"], 2) + 1)
         b_gates[i] = (
             (2 * k[i] + 1) *
-            (b_gates[i + 1] + (2 * kp[i] + 1) *
-             (steps[i]["Agates"] + steps[i]["Aspace"] * relative_cost_gates) +
-             kp[i] * inversion_around_zero_actual_count(steps[i]["Aspace"]) +
-             steps[i]["Dgates"]) +
-            k[i] * inversion_around_zero_actual_count(b_space[i]))
+            (b_gates[i + 1] + steps[i]["Dgates"] + (2 * kp[i] + 1) *
+             (steps[i]["Agates"] + hadamard_actual(steps[i]["Aspace"])) +
+             kp[i] * gzero_actual(steps[i]["Aspace"])) +
+            k[i] * gzero_actual(current_choice_space))
 
-    results_gates = [log(t, 2) for t in b_gates]
+    results_gates = [log(t, 2) for t in b_gates[:-1]]
     print(k)
     print(kp)
     print(results_gates)
 
     final_algo = {
         "space": b_space[0],
-        "ancillas": 0,
         "gates": b_gates[0],
         "prob": success_prob
     }
@@ -337,21 +375,20 @@ def algorithm_sqrt(steps):
 
     # choose values of kprime
     kp = [1 / alphap[j] for j in range(ell)]
-    k = [1 / alpha[j] for j in range(ell - 1)]
-    k.append(sqrt(size[-1]))
-    b_gates = [None for i in range(ell)]
+    k = [1 / alpha[j] for j in range(ell)]
+    b_gates = [None for i in range(ell + 1)]
 
-    b_gates[-1] = (k[-1] * (steps[-1]["Agates"]))
-    for i in range(ell - 2, -1, -1):
+    b_gates[-1] = 0
+    for i in range(ell - 1, -1, -1):
         b_gates[i] = k[i] * (b_gates[i + 1] + steps[i]["Dgates"] + kp[i] *
                              (steps[i]["Agates"]))
 
-    results_gates = [log(t, 2) for t in b_gates]
+    results_gates = [log(t, 2) for t in b_gates[:-1]]
     print(k)
     print(kp)
     print(results_gates)
 
-    final_algo = {"space": 0, "ancillas": 0, "gates": b_gates[0], "prob": 1}
+    final_algo = {"space": 0, "gates": b_gates[0], "prob": 1}
     print_algo(final_algo)
 
 
@@ -379,11 +416,11 @@ def algorithm_parameters_optimized(steps,
     """
     check_list_steps(steps)
     if relative_cost_gates is not None:
-        inversion_around_zero_actual_count = (
-            lambda x: relative_cost_gates * inversion_around_zero_gate_count(x)
-        )
+        gzero_actual = (lambda x: relative_cost_gates * gzero(x))
+        hadamard_actual = (lambda x: relative_cost_gates * hadamard(x))
     else:
-        inversion_around_zero_actual_count = lambda x: 0
+        gzero_actual = lambda x: 0
+        hadamard_actual = lambda x: 0
 
     ell = len(steps)
     size = [s["choice"] for s in steps]  # size of "choice" sets C_i
@@ -413,29 +450,28 @@ def algorithm_parameters_optimized(steps,
     def complexity(x):
         # complexity, depending on a certain choice of k
         k = x
-        b_gates = [None for i in range(ell)]
-        b_space = [None for i in range(ell)
-                   ]  # space complexity of bi (number of qubits spanned)
 
-        # bell: (2kell+1) (G(Aell) + nell) + kell * I(nell)
-        b_gates[-1] = (
-            (2 * k[-1] + 1) *
-            (steps[-1]["Agates"] + steps[-1]["Aspace"] * relative_cost_gates) +
-            k[-1] * inversion_around_zero_actual_count(steps[-1]["Aspace"]))
-        b_space[-1] = steps[-1]["Aspace"]
+        b_gates = [None for i in range(ell + 1)]
+        # gate complexity of B_i
+        b_space = [None for i in range(ell + 1)]
+        # space complexity of B_i (number of qubits spanned)
 
-        for i in range(ell - 2, -1, -1):
+        # recall that B_{ell+1} does nothing by definition
+        b_gates[-1] = 0
+        b_space[-1] = 0
+        current_choice_space = 0
+
+        for i in range(ell - 1, -1, -1):
+            current_choice_space += log(steps[i]["choice"], 2)
             # space complexity: all the qubits on which bi act (incl. new flag)
-            b_space[i] = b_space[
-                i + 1] + steps[i]["Aspace"] + steps[i]["Dspace"] + log(
-                    steps[i]["choice"], 2) + 1
+            b_space[i] = (b_space[i + 1] + steps[i]["Aspace"] +
+                          steps[i]["Dspace"] + log(steps[i]["choice"], 2) + 1)
             b_gates[i] = (
                 (2 * k[i] + 1) *
-                (b_gates[i + 1] + (2 * kp[i] + 1) *
-                 (steps[i]["Agates"] + steps[i]["Aspace"] * relative_cost_gates
-                  ) + kp[i] * inversion_around_zero_actual_count(
-                      steps[i]["Aspace"]) + steps[i]["Dgates"]) +
-                k[i] * inversion_around_zero_actual_count(b_space[i]))
+                (b_gates[i + 1] + steps[i]["Dgates"] + (2 * kp[i] + 1) *
+                 (steps[i]["Agates"] + hadamard_actual(steps[i]["Aspace"])) +
+                 kp[i] * gzero_actual(steps[i]["Aspace"])) +
+                k[i] * gzero_actual(current_choice_space))
         return b_gates[0]
 
     # bounds on the possible values of k
@@ -576,13 +612,15 @@ if __name__ == "__main__":
     algorithm_parameters(aes256_dsmitm_steps, relative_cost_gates=0.1)
     print("\n----------------------------------\n")
     algorithm_parameters(aes_square_steps, relative_cost_gates=0.1)
-
+    print("\n================================\n")
+    algorithm_parameters(aes_id_steps, relative_cost_gates=0.1)
     print("\n================================\n")
 
     algorithm_sqrt(aes256_dsmitm_steps)
     print("\n----------------------------------\n")
     algorithm_sqrt(aes_square_steps)
-
+    print("\n================================\n")
+    algorithm_sqrt(aes_id_steps)
     print("\n================================\n")
 
     #=================================
@@ -598,6 +636,12 @@ if __name__ == "__main__":
                                    prob_exponent=3.5)
     print("\n----------------------------------\n")
     algorithm_parameters_optimized(aes_square_steps,
+                                   relative_cost_gates=0.1,
+                                   fix_prob=None,
+                                   prob_exponent=3)
+
+    print("\n----------------------------------\n")
+    algorithm_parameters_optimized(aes_id_steps,
                                    relative_cost_gates=0.1,
                                    fix_prob=None,
                                    prob_exponent=3)
